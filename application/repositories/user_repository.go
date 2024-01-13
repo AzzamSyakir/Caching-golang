@@ -64,7 +64,7 @@ func (ur *UserRepository) UpdateUser(user entities.User) error {
 	return nil
 }
 
-func (ur *UserRepository) DeleteUser(id int) error {
+func (ur *UserRepository) DeleteUser(id string) error {
 	result, err := ur.db.Exec("DELETE FROM users WHERE id=?", id)
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (ur *UserRepository) DeleteUser(id int) error {
 
 	if rowsAffected == 0 {
 		// Tidak ada baris yang terpengaruh, user dengan ID tersebut tidak ditemukan
-		return fmt.Errorf("user with ID %d not found", id)
+		return fmt.Errorf("user with ID %s not found", id)
 	}
 
 	return nil

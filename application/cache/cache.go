@@ -1,10 +1,13 @@
 package cache
 
 import (
+	"cache-go/application/entities"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -64,15 +67,97 @@ func CloseRedis() error {
 	return nil
 }
 
-// GetCached mengambil data dari cache
-func GetCached() ([]byte, error) {
-	// Ambil alamat Redis dari .env
-	RedisAddr := os.Getenv("REDIS_ADDR")
-	RedisKey = fmt.Sprintf("%s:cached_data", RedisAddr)
+// mengambil data dari cache berdasarkan Redis key
+func FetchAllDataFromCache(redisKey string) ([]entities.User, error) {
+	ctx := context.Background()
+
+	// Inisialisasi variabel untuk menyimpan hasil scan
+	var keys []string
+	var cursor uint64
+
+	// Kumpulkan semua keys yang diawali dengan "user:"
+	var cachedUsers []entities.User //definisikan var diluar loop
+	for {
+		var err error
+		keys, cursor, err = RedisClient.Scan(ctx, cursor, redisKey+":*", 100).Result()
+		if err != nil {
+			return nil, fmt.Errorf("error scanning keys: %v", err)
+		}
+
+		// Loop melalui keys dan ambil data dari cache
+
+		for _, key := range keys {
+			cachedData, err := RedisClient.Get(ctx, key).Bytes()
+			if err != nil {
+				return nil, fmt.Errorf("error getting cached data for key %s: %v", key, err)
+			}
+			var cachedUser entities.User
+			err = json.Unmarshal(cachedData, &cachedUser)
+			if err != nil {
+				return nil, fmt.Errorf("error unmarshalling cached data for key %s: %v", key, err)
+			}
+			cachedUsers = append(cachedUsers, cachedUser)
+		}
+
+		// Hentikan loop jika sudah selesai scanning (cursor == 0)
+		if cursor == 0 {
+			break
+		}
+	}
+	return cachedUsers, nil
+}
+
+// menyimpan data ke cache dengan Redis key
+func SetCached(redisKey string, data []byte) error {
+	ctx := context.Background()
+
+	// Simpan data ke cache dengan waktu kadaluarsa
+	err := RedisClient.SetEx(ctx, redisKey, data, time.Second*60).Err()
+	if err != nil {
+		return fmt.Errorf("error setting data to cache: %v", err)
+	}
+
+	return nil
+}
+
+// menghapus data dari cache berdasarkan RedisKey dan ID
+func DeleteSelectedCached(RedisKey string, id string) error {
+	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
+	if RedisClient == nil {
+		return fmt.Errorf("not connected to Redis")
+	}
+
+	// Hapus data dari cache berdasarkan RedisKey dan ID
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("%s:%s", RedisKey, id)
+	err := RedisClient.Del(ctx, cacheKey).Err()
+	if err != nil {
+		return fmt.Errorf("error deleting data from cache: %v", err)
+	}
+
+	return nil
+}
+func DeleteCached(RedisKey string) error {
+	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
+	if RedisClient == nil {
+		return fmt.Errorf("not connected to Redis")
+	}
+
+	// Hapus data dari cache berdasarkan RedisKey dan ID
+	ctx := context.Background()
+	err := RedisClient.Del(ctx, RedisKey).Err()
+	if err != nil {
+		return fmt.Errorf("error deleting data from cache: %v", err)
+	}
+
+	return nil
+}
+func GetSelectedCached(redisKey string, id string) ([]byte, error) {
 	ctx := context.Background()
 
 	// Cek apakah data ada di cache
-	cachedData, err := RedisClient.Get(ctx, RedisKey).Result()
+	cacheKey := fmt.Sprintf("%s:%s", redisKey, id)
+	cachedData, err := RedisClient.Get(ctx, cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
 			// Key tidak ditemukan di cache
@@ -82,17 +167,4 @@ func GetCached() ([]byte, error) {
 	}
 
 	return []byte(cachedData), nil
-}
-
-// SetCached menyimpan data ke cache
-func SetCached(data []byte) error {
-	ctx := context.Background()
-
-	// Simpan data ke cache dengan waktu kadaluarsa
-	err := RedisClient.Set(ctx, RedisKey, data, 0).Err()
-	if err != nil {
-		return fmt.Errorf("error setting data to cache: %v", err)
-	}
-
-	return nil
 }

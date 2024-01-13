@@ -40,7 +40,8 @@ func InitDB() *sql.DB {
 	log.Info().Msg("Terhubung ke database!")
 
 	// Panggil fungsi migrate untuk inisialisasi migrasi database
-	migration.UserMigrate(db) // User -> Order
+	migration.UserMigrate(db)  // User migration
+	migration.TokenMigrate(db) // tokens migration
 
 	DB = db
 

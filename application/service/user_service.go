@@ -1,8 +1,10 @@
 package service
 
 import (
+	"cache-go/application/cache"
 	"cache-go/application/entities"
 	"cache-go/application/repositories"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +31,10 @@ func (service *UserService) CreateUser(name, email, password string) error {
 	if err != nil {
 		return err
 	}
+	// clear cache data
+	var RedisKey = "user" //initialize redisKey
+	cache.DeleteCached(RedisKey)
+	fmt.Println("cache clear")
 	// Generate a UUID for the user
 	uuid := uuid.New()
 	userID := uuid.String()
@@ -45,9 +51,6 @@ func (service *UserService) CreateUser(name, email, password string) error {
 	return nil
 }
 
-func (us *UserService) FetchUser() ([]entities.User, error) {
-	return us.UserRepository.FetchUser()
-}
 func (service *UserService) UpdateUser(id string, updatedUser entities.User) (entities.User, error) {
 	// Business logic/validation goes here
 
@@ -101,21 +104,26 @@ func (service *UserService) UpdateUser(id string, updatedUser entities.User) (en
 	return updatedData, nil
 }
 
-func (service *UserService) DeleteUser(id int) error {
+func (service *UserService) DeleteUser(id string) error {
 	// Business logic/validation goes here
+	var RedisKey = "user" //initialize redisKey
+	// cek apa ada data di cache
+	// Cek apa data ada dalam cache
+	err := cache.DeleteCached(RedisKey)
+	if err == nil {
+		fmt.Println("cache deleted")
+	}
 
 	// Call repository to delete user in the database
-	err := service.UserRepository.DeleteUser(id)
+	err = service.UserRepository.DeleteUser(id)
 	if err != nil {
 		return err
 	}
 
 	return nil
 }
-func (us *UserService) GetUser(id string) (*entities.User, error) {
-	return us.UserRepository.GetUser(id)
-}
 
+// Auth
 func (us *UserService) LoginUser(email string, password string) (string, error) {
 	// Mendapatkan informasi pengguna dari repository
 	user, err := us.UserRepository.LoginUser(email)
@@ -194,4 +202,71 @@ func (us *UserService) LogoutUser(tokenString string) error {
 
 	us.UserRepository.LogoutUser(userID, currentTime)
 	return nil
+}
+
+func (us *UserService) GetUser(id string) (*entities.User, error) {
+	var RedisKey = id
+	// Check if data exists in cache
+	cachedData, err := cache.GetSelectedCached(RedisKey, id)
+	if err == nil && cachedData != nil {
+		fmt.Println("Data ditemukan dalam cache!")
+		var cachedUsers *entities.User
+		err := json.Unmarshal(cachedData, &cachedUsers)
+		if err != nil {
+			fmt.Println("Error unmarshalling cached data:", err)
+			// Handle error saat unmarshal data
+			return nil, err
+		}
+		return cachedUsers, nil
+	}
+	// Data tidak ada di cache, lanjutkan ke repository
+	user, err := us.UserRepository.GetUser(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Serialize and store user data in cache
+	serializedData, err := json.Marshal(user)
+	if err != nil {
+		return nil, err
+	}
+	err = cache.SetCached(RedisKey, serializedData)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+func (us *UserService) FetchUser() ([]entities.User, error) {
+	var RedisKey = "user"
+
+	// Cek apa data ada dalam cache
+	cachedData, err := cache.FetchAllDataFromCache(RedisKey)
+	if err == nil && cachedData != nil {
+		fmt.Println("Data ditemukan dalam cache!")
+		return cachedData, nil
+	}
+
+	// Data tidak ada di cache, lanjutkan ke repository
+	users, err := us.UserRepository.FetchUser()
+	if err != nil {
+		return nil, err
+	}
+
+	// Simpan setiap user ke cache dengan RedisKey yang sesuai dengan id-nya
+	for _, user := range users {
+		redisKey := fmt.Sprintf("user:%s", user.ID) // Gunakan id user sebagai RedisKey
+		serializedData, err := json.Marshal(user)
+		if err != nil {
+			// Handle error saat serialize data
+			return nil, err
+		}
+		err = cache.SetCached(redisKey, serializedData)
+		if err != nil {
+			// Handle error saat menyimpan ke cache
+			return nil, err
+		}
+	}
+
+	return users, nil
 }

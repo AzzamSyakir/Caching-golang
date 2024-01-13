@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -173,13 +172,13 @@ func (uc *UserController) UpdateUserController(w http.ResponseWriter, r *http.Re
 func (uc *UserController) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Mendapatkan parameter id
 	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
+	id, ok := vars["id"]
+	if !ok {
 		responses.ErrorResponse(w, "id harus disertakan", http.StatusBadRequest)
 		return
 	}
 	// delete user in the service layer
-	err = uc.userService.DeleteUser(id)
+	err := uc.userService.DeleteUser(id)
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to Delete user: %v", err)
 		responses.ErrorResponse(w, errorMessage, http.StatusInternalServerError)
