@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	models "cache-go/application/entities"
 	"cache-go/application/responses"
 	"cache-go/application/service"
 
@@ -17,7 +19,7 @@ type UserController struct {
 	userService service.UserService
 }
 
-func NewInstance(us service.UserService) *UserController {
+func NewUserController(us service.UserService) *UserController {
 	return &UserController{userService: us}
 }
 
@@ -33,7 +35,7 @@ func (uc *UserController) CreateUserController(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	userID, err := uc.userService.CreateUser(user.Name, user.Email, user.Password)
+	err := uc.userService.CreateUser(user.Name, user.Email, user.Password)
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to create user: %v", err)
 		responses.ErrorResponse(w, errorMessage, http.StatusInternalServerError)
@@ -44,13 +46,11 @@ func (uc *UserController) CreateUserController(w http.ResponseWriter, r *http.Re
 
 	// Membuat objek data pengguna untuk dikirim dalam respons
 	userData := struct {
-		ID        int64     `json:"id"`
 		Name      string    `json:"name"`
 		Email     string    `json:"email"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 	}{
-		ID:        userID,
 		Name:      user.Name,
 		Email:     user.Email,
 		CreatedAt: currentTime,
@@ -69,6 +69,7 @@ func (uc *UserController) FetchUserController(w http.ResponseWriter, r *http.Req
 
 	// Membuat objek data pengguna untuk dikirim dalam respons
 	var responseData []struct {
+		ID        string `json:"id"`
 		Username  string `json:"username"`
 		Email     string `json:"email"`
 		CreatedAt string `json:"created_at"`
@@ -77,11 +78,13 @@ func (uc *UserController) FetchUserController(w http.ResponseWriter, r *http.Req
 
 	for _, user := range usersData {
 		userData := struct {
+			ID        string `json:"id"`
 			Username  string `json:"username"`
 			Email     string `json:"email"`
 			CreatedAt string `json:"created_at"`
 			UpdatedAt string `json:"updated_at"`
 		}{
+			ID:        user.ID,
 			Username:  user.Name,
 			Email:     user.Email,
 			CreatedAt: user.CreatedAt.String(), // Menggunakan String() untuk mendapatkan representasi string dari time.Time
@@ -99,8 +102,8 @@ func (uc *UserController) FetchUserController(w http.ResponseWriter, r *http.Req
 func (uc *UserController) GetUserController(w http.ResponseWriter, r *http.Request) {
 	// Mendapatkan parameter id
 	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
+	id, ok := vars["id"]
+	if !ok {
 		responses.ErrorResponse(w, "id harus disertakan", http.StatusBadRequest)
 		return
 	}
@@ -133,25 +136,20 @@ func (uc *UserController) GetUserController(w http.ResponseWriter, r *http.Reque
 func (uc *UserController) UpdateUserController(w http.ResponseWriter, r *http.Request) {
 	// Mendapatkan parameter id
 	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
+	id, ok := vars["id"]
+	if !ok {
 		responses.ErrorResponse(w, "id harus disertakan", http.StatusBadRequest)
 		return
 	}
 
-	var user struct {
-		Name     string `json:"name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	var updatedUser models.User
+	if err := json.NewDecoder(r.Body).Decode(&updatedUser); err != nil {
 		responses.ErrorResponse(w, "Failed to read user data from the request", http.StatusBadRequest)
 		return
 	}
 
 	// Update user in the service layer
-	err = uc.userService.UpdateUser(id, user.Name, user.Email, user.Password)
+	_, err := uc.userService.UpdateUser(id, updatedUser)
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to update user: %v", err)
 		responses.ErrorResponse(w, errorMessage, http.StatusInternalServerError)
@@ -161,20 +159,17 @@ func (uc *UserController) UpdateUserController(w http.ResponseWriter, r *http.Re
 	currentTime := time.Now()
 
 	// Membuat objek data pengguna untuk dikirim dalam respons
-	userData := struct {
-		ID        int64     `json:"id"`
-		Name      string    `json:"name"`
-		Email     string    `json:"email"`
-		UpdatedAt time.Time `json:"updated_at"`
-	}{
-		ID:        int64(id),
-		Name:      user.Name,
-		Email:     user.Email,
+	updatedData := models.User{
+		Name:      updatedUser.Name,
+		Email:     updatedUser.Email,
 		UpdatedAt: currentTime,
 	}
 
-	responses.SuccessResponse(w, "Success", userData, http.StatusCreated)
+	// Return response with only updated data
+	w.Header().Set("Content-Type", "application/json")
+	responses.SuccessResponse(w, "Success", updatedData, http.StatusCreated)
 }
+
 func (uc *UserController) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Mendapatkan parameter id
 	vars := mux.Vars(r)
@@ -227,4 +222,23 @@ func (uc *UserController) LoginUser(w http.ResponseWriter, r *http.Request) {
 	// Mengembalikan token dan pesan sukses
 	response := map[string]string{"token": token}
 	responses.SuccessResponse(w, "Login berhasil", response, http.StatusOK)
+}
+
+func (us *UserController) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	// Mendapatkan token dari header "Authorization"
+	tokenString := r.Header.Get("Authorization")
+
+	// Membersihkan token dari string "Bearer "
+	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
+
+	// Memanggil fungsi LogoutUser dari service
+	err := us.userService.LogoutUser(tokenString)
+	if err != nil {
+		// Mengatasi kesalahan
+		responses.ErrorResponse(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	// Mengembalikan token yang baru setelah logout
+	responses.OtherResponses(w, "logout berhasil", http.StatusCreated)
 }
