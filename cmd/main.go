@@ -24,9 +24,6 @@ func main() {
 		}
 	}()
 
-	// Print Redis status
-	fmt.Println(cache.GetRedisStatus())
-
 	// Run server
 	routes.RunServer()
 	fmt.Println("Server started on port: 9000")
