@@ -152,7 +152,7 @@ func DeleteCached(RedisKey string) error {
 
 	return nil
 }
-func GetSelectedCached(redisKey string, id string) ([]byte, error) {
+func GetSelectedCached(redisKey, id string) ([]byte, error) {
 	ctx := context.Background()
 
 	// Cek apakah data ada di cache

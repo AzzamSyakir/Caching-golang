@@ -205,7 +205,7 @@ func (us *UserService) LogoutUser(tokenString string) error {
 }
 
 func (us *UserService) GetUser(id string) (*entities.User, error) {
-	var RedisKey = id
+	var RedisKey = "user:%s"
 	// Check if data exists in cache
 	cachedData, err := cache.GetSelectedCached(RedisKey, id)
 	if err == nil && cachedData != nil {
@@ -230,7 +230,8 @@ func (us *UserService) GetUser(id string) (*entities.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = cache.SetCached(RedisKey, serializedData)
+	redisKey := fmt.Sprintf("user:%s", user.ID) // Gunakan id user sebagai RedisKey
+	err = cache.SetCached(redisKey, serializedData)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +244,6 @@ func (us *UserService) FetchUser() ([]entities.User, error) {
 	// Cek apa data ada dalam cache
 	cachedData, err := cache.FetchAllDataFromCache(RedisKey)
 	if err == nil && cachedData != nil {
-		fmt.Println("Data ditemukan dalam cache!")
 		return cachedData, nil
 	}
 
