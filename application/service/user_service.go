@@ -33,8 +33,7 @@ func (service *UserService) CreateUser(name, email, password string) error {
 	}
 	// clear cache data
 	var RedisKey = "user" //initialize redisKey
-	cache.DeleteCached(RedisKey)
-	fmt.Println("cache clear")
+	cache.ClearCache(RedisKey)
 	// Generate a UUID for the user
 	uuid := uuid.New()
 	userID := uuid.String()
@@ -105,13 +104,11 @@ func (service *UserService) UpdateUser(id string, updatedUser entities.User) (en
 }
 
 func (service *UserService) DeleteUser(id string) error {
-	// Business logic/validation goes here
-	var RedisKey = "user" //initialize redisKey
-	// cek apa ada data di cache
+	redisKey := fmt.Sprintf("user:%s", id) // tambahkan id di redis key nya agar menghapus spesifik
 	// Cek apa data ada dalam cache
-	err := cache.DeleteCached(RedisKey)
-	if err == nil {
-		fmt.Println("cache deleted")
+	err := cache.DeleteCached(redisKey)
+	if err != nil {
+		return err
 	}
 
 	// Call repository to delete user in the database
@@ -203,11 +200,10 @@ func (us *UserService) LogoutUser(tokenString string) error {
 	us.UserRepository.LogoutUser(userID, currentTime)
 	return nil
 }
-
 func (us *UserService) GetUser(id string) (*entities.User, error) {
-	var RedisKey = "user:%s"
+	redisKey := fmt.Sprintf("user:%s", id) // Gunakan id user sebagai RedisKey
 	// Check if data exists in cache
-	cachedData, err := cache.GetSelectedCached(RedisKey, id)
+	cachedData, err := cache.GetCached(redisKey)
 	if err == nil && cachedData != nil {
 		fmt.Println("Data ditemukan dalam cache!")
 		var cachedUsers *entities.User
@@ -230,7 +226,6 @@ func (us *UserService) GetUser(id string) (*entities.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	redisKey := fmt.Sprintf("user:%s", user.ID) // Gunakan id user sebagai RedisKey
 	err = cache.SetCached(redisKey, serializedData)
 	if err != nil {
 		return nil, err

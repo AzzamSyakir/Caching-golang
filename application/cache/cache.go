@@ -120,23 +120,6 @@ func SetCached(redisKey string, data []byte) error {
 	return nil
 }
 
-// menghapus data dari cache berdasarkan RedisKey dan ID
-func DeleteSelectedCached(RedisKey string, id string) error {
-	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
-	if RedisClient == nil {
-		return fmt.Errorf("not connected to Redis")
-	}
-
-	// Hapus data dari cache berdasarkan RedisKey dan ID
-	ctx := context.Background()
-	cacheKey := fmt.Sprintf("%s:%s", RedisKey, id)
-	err := RedisClient.Del(ctx, cacheKey).Err()
-	if err != nil {
-		return fmt.Errorf("error deleting data from cache: %v", err)
-	}
-
-	return nil
-}
 func DeleteCached(RedisKey string) error {
 	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
 	if RedisClient == nil {
@@ -152,12 +135,11 @@ func DeleteCached(RedisKey string) error {
 
 	return nil
 }
-func GetSelectedCached(redisKey, id string) ([]byte, error) {
+func GetCached(redisKey string) ([]byte, error) {
 	ctx := context.Background()
 
 	// Cek apakah data ada di cache
-	cacheKey := fmt.Sprintf("%s:%s", redisKey, id)
-	cachedData, err := RedisClient.Get(ctx, cacheKey).Result()
+	cachedData, err := RedisClient.Get(ctx, redisKey).Result()
 	if err != nil {
 		if err == redis.Nil {
 			// Key tidak ditemukan di cache
@@ -167,4 +149,39 @@ func GetSelectedCached(redisKey, id string) ([]byte, error) {
 	}
 
 	return []byte(cachedData), nil
+}
+
+func ClearCache(RedisKey string) error {
+	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
+	if RedisClient == nil {
+		return fmt.Errorf("not connected to Redis")
+	}
+
+	ctx := context.Background()
+
+	// Ambil semua keys yang diawali dengan RedisKey
+	var cursor uint64
+	for {
+		var keys []string
+		// Perhatikan bahwa tidak ada ":=" di bawah, karena kita tidak ingin mendeklarasikan ulang keys
+		keys, cursor, err := RedisClient.Scan(ctx, cursor, RedisKey+":*", -1).Result()
+		if err != nil {
+			return fmt.Errorf("error scanning keys: %v", err)
+		}
+
+		// Hapus setiap key yang sesuai dengan RedisKey
+		for _, key := range keys {
+			err := RedisClient.Del(ctx, key).Err()
+			if err != nil {
+				return fmt.Errorf("error deleting key %s from cache: %v", key, err)
+			}
+		}
+
+		// Hentikan loop jika sudah selesai scanning (cursor == 0)
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return nil
 }
