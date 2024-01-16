@@ -107,6 +107,29 @@ func FetchAllDataFromCache(redisKey string) ([]entities.User, error) {
 	return cachedUsers, nil
 }
 
+func UpdateCache(RedisKey string, updateData interface{}) error {
+	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
+	if RedisClient == nil {
+		return fmt.Errorf("not connected to Redis")
+	}
+
+	ctx := context.Background()
+
+	// Serialize updateData menjadi bentuk byte
+	serializedData, err := json.Marshal(updateData)
+	if err != nil {
+		return fmt.Errorf("error serializing data: %v", err)
+	}
+
+	// Set nilai baru ke dalam cache
+	err = RedisClient.Set(ctx, RedisKey, serializedData, 0).Err()
+	if err != nil {
+		return fmt.Errorf("error updating cache: %v", err)
+	}
+
+	return nil
+}
+
 // menyimpan data ke cache dengan Redis key
 func SetCached(redisKey string, data []byte) error {
 	ctx := context.Background()
@@ -136,6 +159,10 @@ func DeleteCached(RedisKey string) error {
 	return nil
 }
 func GetCached(redisKey string) ([]byte, error) {
+	// Pastikan RedisClient sudah diinisialisasi sebelum digunakan
+	if RedisClient == nil {
+		return nil, fmt.Errorf("not connected to Redis")
+	}
 	ctx := context.Background()
 
 	// Cek apakah data ada di cache

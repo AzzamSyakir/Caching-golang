@@ -51,8 +51,7 @@ func (service *UserService) CreateUser(name, email, password string) error {
 }
 
 func (service *UserService) UpdateUser(id string, updatedUser entities.User) (entities.User, error) {
-	// Business logic/validation goes here
-
+	redisKey := fmt.Sprintf("user:%s", id)
 	// Validate if the user exists
 	user, err := service.UserRepository.GetUser(id)
 	if err != nil {
@@ -99,7 +98,7 @@ func (service *UserService) UpdateUser(id string, updatedUser entities.User) (en
 		Email:     user.Email,
 		UpdatedAt: user.UpdatedAt,
 	}
-
+	cache.UpdateCache(redisKey, updatedData)
 	return updatedData, nil
 }
 
@@ -118,6 +117,72 @@ func (service *UserService) DeleteUser(id string) error {
 	}
 
 	return nil
+}
+
+func (us *UserService) GetUser(id string) (*entities.User, error) {
+	redisKey := fmt.Sprintf("user:%s", id) // Gunakan id user sebagai RedisKey
+	// Check if data exists in cache
+	cachedData, err := cache.GetCached(redisKey)
+	if err == nil && cachedData != nil {
+		fmt.Println("Data ditemukan dalam cache!")
+		var cachedUsers *entities.User
+		err := json.Unmarshal(cachedData, &cachedUsers)
+		if err != nil {
+			fmt.Println("Error unmarshalling cached data:", err)
+			// Handle error saat unmarshal data
+			return nil, err
+		}
+		return cachedUsers, nil
+	}
+	// Data tidak ada di cache, lanjutkan ke repository
+	user, err := us.UserRepository.GetUser(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Serialize and store user data in cache
+	serializedData, err := json.Marshal(user)
+	if err != nil {
+		return nil, err
+	}
+	err = cache.SetCached(redisKey, serializedData)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+func (us *UserService) FetchUser() ([]entities.User, error) {
+	var RedisKey = "user"
+
+	// Cek apa data ada dalam cache
+	cachedData, err := cache.FetchAllDataFromCache(RedisKey)
+	if err == nil && cachedData != nil {
+		return cachedData, nil
+	}
+
+	// Data tidak ada di cache, lanjutkan ke repository
+	users, err := us.UserRepository.FetchUser()
+	if err != nil {
+		return nil, err
+	}
+
+	// Simpan setiap user ke cache dengan RedisKey yang sesuai dengan id-nya
+	for _, user := range users {
+		redisKey := fmt.Sprintf("user:%s", user.ID) // Gunakan id user sebagai RedisKey
+		serializedData, err := json.Marshal(user)
+		if err != nil {
+			// Handle error saat serialize data
+			return nil, err
+		}
+		err = cache.SetCached(redisKey, serializedData)
+		if err != nil {
+			// Handle error saat menyimpan ke cache
+			return nil, err
+		}
+	}
+
+	return users, nil
 }
 
 // Auth
@@ -199,69 +264,4 @@ func (us *UserService) LogoutUser(tokenString string) error {
 
 	us.UserRepository.LogoutUser(userID, currentTime)
 	return nil
-}
-func (us *UserService) GetUser(id string) (*entities.User, error) {
-	redisKey := fmt.Sprintf("user:%s", id) // Gunakan id user sebagai RedisKey
-	// Check if data exists in cache
-	cachedData, err := cache.GetCached(redisKey)
-	if err == nil && cachedData != nil {
-		fmt.Println("Data ditemukan dalam cache!")
-		var cachedUsers *entities.User
-		err := json.Unmarshal(cachedData, &cachedUsers)
-		if err != nil {
-			fmt.Println("Error unmarshalling cached data:", err)
-			// Handle error saat unmarshal data
-			return nil, err
-		}
-		return cachedUsers, nil
-	}
-	// Data tidak ada di cache, lanjutkan ke repository
-	user, err := us.UserRepository.GetUser(id)
-	if err != nil {
-		return nil, err
-	}
-
-	// Serialize and store user data in cache
-	serializedData, err := json.Marshal(user)
-	if err != nil {
-		return nil, err
-	}
-	err = cache.SetCached(redisKey, serializedData)
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-}
-func (us *UserService) FetchUser() ([]entities.User, error) {
-	var RedisKey = "user"
-
-	// Cek apa data ada dalam cache
-	cachedData, err := cache.FetchAllDataFromCache(RedisKey)
-	if err == nil && cachedData != nil {
-		return cachedData, nil
-	}
-
-	// Data tidak ada di cache, lanjutkan ke repository
-	users, err := us.UserRepository.FetchUser()
-	if err != nil {
-		return nil, err
-	}
-
-	// Simpan setiap user ke cache dengan RedisKey yang sesuai dengan id-nya
-	for _, user := range users {
-		redisKey := fmt.Sprintf("user:%s", user.ID) // Gunakan id user sebagai RedisKey
-		serializedData, err := json.Marshal(user)
-		if err != nil {
-			// Handle error saat serialize data
-			return nil, err
-		}
-		err = cache.SetCached(redisKey, serializedData)
-		if err != nil {
-			// Handle error saat menyimpan ke cache
-			return nil, err
-		}
-	}
-
-	return users, nil
 }
